@@ -1,0 +1,36 @@
+{
+  "maxFileHandles": 800,
+  "outDir": "/var/www/html/termen",
+  "domain": "https://example.org",
+  "tasks": [
+    {
+      "input": "/home/user/vtmk.ttl",
+      "name": "vtmk",
+      "properties": [
+        "http://www.w3.org/2004/02/skos/core#prefLabel",
+        "http://www.w3.org/2004/02/skos/core#altLabel"
+      ]
+    }, {
+      "input": "/home/user/cht.ttl",
+      "name": "cht",
+      "properties": [
+        "http://www.w3.org/2004/02/skos/core#prefLabel",
+        "http://www.w3.org/2004/02/skos/core#altLabel"
+      ]
+    }, {
+      "input": "/home/user/rkdartists.ttl",
+      "name": "rkdartists",
+      "properties": [
+        "http://schema.org/name",
+        "http://schema.org/alternateName"
+      ]
+    }, {
+      "input": "/home/user/nta.ttl",
+      "name": "nta",
+      "properties": [
+        "http://schema.org/name",
+        "http://schema.org/alternateName"
+      ]
+    }
+  ]
+}
