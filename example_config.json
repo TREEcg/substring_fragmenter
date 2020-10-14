@@ -1,7 +1,7 @@
 {
   "maxFileHandles": 800,
   "outDir": "/var/www/html/termen",
-  "domain": "https://example.org",
+  "domain": "https://example.org/prefixes/",
   "tasks": [
     {
       "input": "/home/user/vtmk.ttl",

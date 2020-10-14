@@ -41,7 +41,7 @@ public class Main {
         RDFParser.source(inputFileName).parse(fragmenter);
 
         System.out.println("Finalizing " + task.input);
-        fragmenter.addHypermedia(domain);
+        fragmenter.addHypermedia(domain.resolve("./" + task.name + "/"));
     }
 
     public static void main(String[] args) {

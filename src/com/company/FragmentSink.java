@@ -42,7 +42,7 @@ class FragmentSink implements StreamRDF {
         }
     }
 
-    public void addHypermedia(URI domain) throws IOException {
+    public void addHypermedia(URI root) throws IOException {
         Deque<String> queue = new LinkedList<>();
         queue.add("");
 
@@ -53,7 +53,7 @@ class FragmentSink implements StreamRDF {
         Node valuePredicate = NodeFactory.createURI("https://w3id.org/tree#value");
         Node remainingPredicate = NodeFactory.createURI("https://w3id.org/tree#remainingItems");
         Node relationObject = NodeFactory.createURI("https://w3id.org/tree#PrefixRelation");
-        Node rootNode = NodeFactory.createURI(domain.toASCIIString());
+        Node rootNode = NodeFactory.createURI(root.toASCIIString());
 
         while (queue.size() > 0) {
             String current = queue.pop();
@@ -61,10 +61,10 @@ class FragmentSink implements StreamRDF {
             Node thisNode;
             if (current.length() == 0) {
                 filePath = this.outDirPath.resolve(".root.nt");
-                thisNode = NodeFactory.createURI(domain.toASCIIString());
+                thisNode = NodeFactory.createURI(root.toASCIIString());
             } else {
                 filePath = this.outDirPath.resolve(current + ".nt");
-                thisNode = NodeFactory.createURI(domain.resolve("/" + current).toASCIIString());
+                thisNode = NodeFactory.createURI(root.resolve("./" + current).toASCIIString());
             }
 
             StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
@@ -78,7 +78,7 @@ class FragmentSink implements StreamRDF {
                     queue.add(next);
                     int count = this.counts.get(hash);
 
-                    Node nextNode = NodeFactory.createURI(domain.resolve("/" + next).toASCIIString());
+                    Node nextNode = NodeFactory.createURI(root.resolve("./" + next).toASCIIString());
                     Node nextValue = NodeFactory.createLiteral(next);
                     Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
 
