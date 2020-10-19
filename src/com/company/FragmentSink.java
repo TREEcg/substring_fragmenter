@@ -67,31 +67,35 @@ class FragmentSink implements StreamRDF {
                 thisNode = NodeFactory.createURI(root.resolve("./" + current).toASCIIString());
             }
 
-            StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
-            Triple viewStatement = Triple.create(rootNode, viewPredicate, thisNode);
-            out.triple(viewStatement);
+            long currentHash = this.hash(current);
+            if (current.length() == 0 || this.counts.get(currentHash) > 100) {
+                // this page is either the root node, or a truncated one
+                StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
+                Triple viewStatement = Triple.create(rootNode, viewPredicate, thisNode);
+                out.triple(viewStatement);
 
-            for(char alphabet = 'a'; alphabet <='z'; alphabet++ ) {
-                String next = current + alphabet;
-                long hash = this.hash(next);
-                if (this.counts.containsKey(hash)) {
-                    queue.add(next);
-                    int count = this.counts.get(hash);
+                for(char alphabet = 'a'; alphabet <='z'; alphabet++ ) {
+                    String next = current + alphabet;
+                    long nextHash = this.hash(next);
+                    if (this.counts.containsKey(nextHash)) {
+                        queue.add(next);
+                        int count = this.counts.get(nextHash);
 
-                    Node nextNode = NodeFactory.createURI(root.resolve("./" + next).toASCIIString());
-                    Node nextValue = NodeFactory.createLiteral(next);
-                    Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
+                        Node nextNode = NodeFactory.createURI(root.resolve("./" + next).toASCIIString());
+                        Node nextValue = NodeFactory.createLiteral(next);
+                        Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
 
-                    Node relationNode = NodeFactory.createBlankNode(next);
-                    out.triple(Triple.create(thisNode, relationPredicate, relationNode));
-                    out.triple(Triple.create(relationNode, typePredicate, relationObject));
-                    out.triple(Triple.create(relationNode, nodePredicate, nextNode));
-                    out.triple(Triple.create(relationNode, valuePredicate, nextValue));
-                    out.triple(Triple.create(nextNode, remainingPredicate, remainingNode));
+                        Node relationNode = NodeFactory.createBlankNode(next);
+                        out.triple(Triple.create(thisNode, relationPredicate, relationNode));
+                        out.triple(Triple.create(relationNode, typePredicate, relationObject));
+                        out.triple(Triple.create(relationNode, nodePredicate, nextNode));
+                        out.triple(Triple.create(relationNode, valuePredicate, nextValue));
+                        out.triple(Triple.create(nextNode, remainingPredicate, remainingNode));
+                    }
                 }
-            }
 
-            out.finish();
+                out.finish();
+            }
         }
 
     }
@@ -143,7 +147,15 @@ class FragmentSink implements StreamRDF {
 
                 int count = this.counts.get(hash);
                 this.counts.put(hash, count + 1);
-                if (count < 100 || token.length() - prefix.length() < 2) {
+
+                boolean write = false;
+                write |= count < 100;
+                write |= (count < 200 && token.length() - prefix.length() < 2);
+                write |= (count < 300 && token.length() - prefix.length() < 1);
+                write |= (count < 400 && token.length() == prefix.length());
+                write |= (count < 800 && token.length() == prefix.length() && token.length() > 4);
+
+                if (write) {
                     result.add(this.getOutStream(prefix, hash));
                 } else {
                     break;
