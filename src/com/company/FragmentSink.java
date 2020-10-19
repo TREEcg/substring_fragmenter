@@ -52,6 +52,8 @@ class FragmentSink implements StreamRDF {
         Node nodePredicate = NodeFactory.createURI("https://w3id.org/tree#node");
         Node valuePredicate = NodeFactory.createURI("https://w3id.org/tree#value");
         Node remainingPredicate = NodeFactory.createURI("https://w3id.org/tree#remainingItems");
+        Node pathPredicate = NodeFactory.createURI("https://w3id.org/tree#path");
+        Node alternatePathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
         Node relationObject = NodeFactory.createURI("https://w3id.org/tree#PrefixRelation");
         Node rootNode = NodeFactory.createURI(root.toASCIIString());
 
@@ -74,6 +76,16 @@ class FragmentSink implements StreamRDF {
                 Triple viewStatement = Triple.create(rootNode, viewPredicate, thisNode);
                 out.triple(viewStatement);
 
+                Node pathNode;
+                if (this.properties.length > 1) {
+                    pathNode = NodeFactory.createBlankNode("path_node");
+                    for (Node propertyNode : this.properties) {
+                        out.triple(Triple.create(pathNode, alternatePathPredicate, propertyNode));
+                    }
+                } else {
+                    pathNode = this.properties[0];
+                }
+
                 for(char alphabet = 'a'; alphabet <='z'; alphabet++ ) {
                     String next = current + alphabet;
                     long nextHash = this.hash(next);
@@ -90,6 +102,7 @@ class FragmentSink implements StreamRDF {
                         out.triple(Triple.create(relationNode, typePredicate, relationObject));
                         out.triple(Triple.create(relationNode, nodePredicate, nextNode));
                         out.triple(Triple.create(relationNode, valuePredicate, nextValue));
+                        out.triple(Triple.create(relationNode, pathPredicate, pathNode));
                         out.triple(Triple.create(nextNode, remainingPredicate, remainingNode));
                     }
                 }
