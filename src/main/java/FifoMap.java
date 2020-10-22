@@ -1,4 +1,4 @@
-package com.company;
+package main.java;
 
 import org.apache.jena.riot.system.StreamRDF;
 

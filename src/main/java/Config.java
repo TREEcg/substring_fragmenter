@@ -1,4 +1,4 @@
-package com.company;
+package main.java;
 
 public class Config {
     public ConfigTask[] tasks;

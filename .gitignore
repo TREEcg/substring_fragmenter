@@ -19,6 +19,7 @@
 *.tar.gz
 *.rar
 out/
+target/
 
 # IDE files
 *.idea

@@ -1,4 +1,4 @@
-package com.company;
+package main.java;
 
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
@@ -26,6 +26,7 @@ class FragmentSink implements StreamRDF {
     protected final Node[] properties;
     protected final Map<Long, StreamRDF> outStreams;
     protected final Map<Long, Integer> counts;
+    protected final Map<Long, Integer> written;
     protected final NodeFormatter nodeFmt;
     protected final HashFunction hasher;
     protected final Path outDirPath;
@@ -33,7 +34,8 @@ class FragmentSink implements StreamRDF {
     FragmentSink(ArrayList<Property> properties, int maxFileHandles, Path outDirPath) {
         this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8);
         this.outStreams = new FifoMap<>(maxFileHandles);
-        this.counts = new TreeMap<>();
+        this.counts = new HashMap<>();
+        this.written = new HashMap<>();
         this.properties = new Node[properties.size()];
         this.outDirPath = outDirPath;
         this.hasher = Hashing.goodFastHash(64);
@@ -182,22 +184,23 @@ class FragmentSink implements StreamRDF {
                 Long hash = this.hash(prefix);
                 if (!this.counts.containsKey(hash)) {
                     this.counts.put(hash, 0);
+                    this.written.put(hash, 0);
                 }
 
+                int written = this.written.get(hash);
                 int count = this.counts.get(hash);
                 this.counts.put(hash, count + 1);
 
                 boolean write = false;
-                write |= count < 100;
-                write |= (count < 200 && token.length() - prefix.length() < 2);
-                write |= (count < 300 && token.length() - prefix.length() < 1);
-                write |= (count < 400 && token.length() == prefix.length());
-                write |= (count < 800 && token.length() == prefix.length() && token.length() > 4);
+                write |= written < 100;
+                write |= (written < 200 && token.length() - prefix.length() < 2);
+                write |= (written < 300 && token.length() - prefix.length() < 1);
+                write |= (written < 400 && token.length() == prefix.length());
+                write |= (written < 800 && token.length() == prefix.length() && token.length() > 4);
 
                 if (write) {
                     result.add(this.getOutStream(prefix, hash));
-                } else {
-                    break;
+                    this.written.put(hash, written + 1);
                 }
             }
         }
@@ -223,7 +226,8 @@ class FragmentSink implements StreamRDF {
     }
 
     private Iterable<String> tokenize(String value) {
-        String[] parts = value.split(" ");
+        return Arrays.asList(value.split(" "));
+        /*
         List<String> result = new ArrayList<>();
         for (String p : parts) {
             if (p.length() > 2) {
@@ -235,6 +239,7 @@ class FragmentSink implements StreamRDF {
         } else {
             return result;
         }
+        */
     }
 
     private Iterable<String> prefixes(String value) {

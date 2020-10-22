@@ -1,4 +1,4 @@
-package com.company;
+package main.java;
 
 import com.google.gson.Gson;
 import org.apache.jena.rdf.model.Property;
