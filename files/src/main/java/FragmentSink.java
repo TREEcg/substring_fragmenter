@@ -247,7 +247,7 @@ class FragmentSink implements StreamRDF {
         String reduced = original.toLowerCase();
         reduced = Normalizer.normalize(reduced, Normalizer.Form.NFKD);
         reduced = reduced.replaceAll("\\p{M}", "");
-        reduced = reduced.replaceAll("[^\\p{IsAlphabetic}\\p{javaSpaceChar}]", "");
+        reduced = reduced.replaceAll("[^\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}]", "");
         return reduced;
     }
 
