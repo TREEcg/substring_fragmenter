@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.text.Normalizer;
 import java.util.*;
 
 @SuppressWarnings("UnstableApiUsage")
@@ -30,6 +31,7 @@ class FragmentSink implements StreamRDF {
     protected final NodeFormatter nodeFmt;
     protected final HashFunction hasher;
     protected final Path outDirPath;
+    protected final Set<Character> charSet;
 
     FragmentSink(ArrayList<Property> properties, int maxFileHandles, Path outDirPath) {
         this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8);
@@ -39,6 +41,7 @@ class FragmentSink implements StreamRDF {
         this.properties = new Node[properties.size()];
         this.outDirPath = outDirPath;
         this.hasher = Hashing.goodFastHash(64);
+        this.charSet = new HashSet<>();
         for ( int i = 0 ; i < properties.size() ; i++ ) {
             this.properties[i] = properties.get(i).asNode();
         }
@@ -111,9 +114,9 @@ class FragmentSink implements StreamRDF {
                 out.triple(Triple.create(propertyNode, shaclMinCountPredicate, tempNode));
 
                 // add links to the following data pages
-                // note that just enumerating over the alphabet is a naive solution
-                for(char alphabet = 'a'; alphabet <='z'; alphabet++ ) {
-                    String next = current + alphabet;
+                // by just iterating over all known possible prefix extensions
+                for(char c : this.charSet ) {
+                    String next = current + c;
                     long nextHash = this.hash(next);
 
                     // checking the hash is faster than checking the file's existence - but may backfire
@@ -178,9 +181,15 @@ class FragmentSink implements StreamRDF {
 
     private Iterable<StreamRDF> getOutStreams(String s)  {
         ArrayList<StreamRDF> result = new ArrayList<>();
-        for (String token : this.tokenize(s)) {
-            String cleanToken = token.replaceAll("[^a-zA-Z]", "");
-            for (String prefix : this.prefixes(cleanToken)) {
+
+        // remove diacritics
+        String cleanString = this.normalize(s);
+
+        // memorize all used characters so we can later piece together the hypermedia controls
+        this.registerCharacters(cleanString);
+        for (String token : this.tokenize(cleanString)) {
+            //String cleanToken = token.replaceAll("[^a-zA-Z]", "");
+            for (String prefix : this.prefixes(token)) {
                 Long hash = this.hash(prefix);
                 if (!this.counts.containsKey(hash)) {
                     this.counts.put(hash, 0);
@@ -207,6 +216,12 @@ class FragmentSink implements StreamRDF {
         return result;
     }
 
+    private void registerCharacters(String s) {
+        for (char c : s.toCharArray()) {
+            this.charSet.add(c);
+        }
+    }
+
     private long hash(String s) {
         return this.hasher.hashString(s, StandardCharsets.UTF_8).asLong();
     }
@@ -214,7 +229,6 @@ class FragmentSink implements StreamRDF {
     private StreamRDF getOutStream(String prefix, Long hash)  {
         if (!this.outStreams.containsKey(hash)) {
             Path filePath = this.outDirPath.resolve(prefix + ".nt");
-            //this.outStreams.put(hash, StreamRDFLib.writer(OutputStream.nullOutputStream()));
             try {
                 this.outStreams.put(hash, StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true)));
             } catch (IOException e) {
@@ -227,25 +241,20 @@ class FragmentSink implements StreamRDF {
 
     private Iterable<String> tokenize(String value) {
         return Arrays.asList(value.split(" "));
-        /*
-        List<String> result = new ArrayList<>();
-        for (String p : parts) {
-            if (p.length() > 2) {
-                result.add(p);
-            }
-        }
-        if (result.isEmpty()) {
-            return Arrays.asList(parts);
-        } else {
-            return result;
-        }
-        */
+    }
+
+    private String normalize(String original) {
+        String reduced = original.toLowerCase();
+        reduced = Normalizer.normalize(reduced, Normalizer.Form.NFKD);
+        reduced = reduced.replaceAll("\\p{M}", "");
+        reduced = reduced.replaceAll("[^\\p{IsAlphabetic}\\p{javaSpaceChar}]", "");
+        return reduced;
     }
 
     private Iterable<String> prefixes(String value) {
         ArrayList<String> result = new ArrayList<>();
         for (int i = value.length(); i > 0; i--) {
-            result.add(value.substring(0, i).toLowerCase());
+            result.add(value.substring(0, i));
         }
         return result;
     }
