@@ -50,7 +50,7 @@ Input data is processed in 3 steps:
 
    4. A writable StreamRDF is returned for each prefix, and the triple/quad is written to them
 
-      ![files](/home/hdelva/IdeaProjects/termen/img/files.svg) 
+      ![files](./img/files.svg) 
 
 3. Once all triples are processed, hypermedia links are added to the fragments
 
