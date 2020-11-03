@@ -3,6 +3,7 @@ package main.java;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.apache.jena.atlas.lib.CharSpace;
+import org.apache.jena.base.Sys;
 import org.apache.jena.datatypes.TypeMapper;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
@@ -34,21 +35,63 @@ class FragmentSink implements StreamRDF {
     protected final Set<Character> charSet;
 
     FragmentSink(ArrayList<Property> properties, int maxFileHandles, Path outDirPath) {
-        this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8);
-        this.outStreams = new FifoMap<>(maxFileHandles);
-        this.counts = new HashMap<>();
-        this.written = new HashMap<>();
+        this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8); // creates ntriples lines
+        this.outStreams = new FifoMap<>(maxFileHandles);    // all open file handles
+        this.counts = new HashMap<>();  // how often a prefix was encountered
+        this.written = new HashMap<>(); // how often a prefix (fragment) was written to
+
+        // some implementation/optimization details
+        this.hasher = Hashing.goodFastHash(64); // used to hash prefixes
+        this.charSet = new HashSet<>(); // used to enumerate all possible prefixes when creating hypermedia links
+
+        this.outDirPath = outDirPath; // root location to write to
+
+        // stuff to filter on
         this.properties = new Node[properties.size()];
-        this.outDirPath = outDirPath;
-        this.hasher = Hashing.goodFastHash(64);
-        this.charSet = new HashSet<>();
         for ( int i = 0 ; i < properties.size() ; i++ ) {
             this.properties[i] = properties.get(i).asNode();
         }
     }
 
+    @Override
+    public void triple(Triple triple) {
+        if (triple.getSubject().isURI()) {
+            // blank nodes are pointless for what we're doing
+            for ( Node p : properties ) {
+                if (  triple.getPredicate().equals(p) ) {
+                    // predicate matches what's configured
+                    for (StreamRDF out : this.getOutStreams(triple.getObject().getLiteralLexicalForm())) {
+                        // write this triple to all relevant fragment files
+                        out.triple(triple);
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
+    public void quad(Quad quad) {
+        // same as this.triple, but for quads
+        for ( Node p : properties ) {
+            if ( quad.getPredicate().equals(p) ) {
+                for (StreamRDF out : this.getOutStreams(quad.getObject().getLiteralLexicalForm())) {
+                    out.quad(quad);
+                }
+            }
+        }
+    }
+
+    @Override
+    public void finish() {
+        // flush all open file handles
+        for (StreamRDF out : this.outStreams.values()) {
+            out.finish();
+        }
+    }
+
     public void addHypermedia(URI root) throws IOException {
         // define some Node objects we'll need
+        // this is probably not the most idiomatic way
         Node subsetPredicate = NodeFactory.createURI("http://rdfs.org/ns/void#subset");
         Node relationPredicate = NodeFactory.createURI("https://w3id.org/tree#relation");
         Node typePredicate = NodeFactory.createURI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
@@ -65,16 +108,21 @@ class FragmentSink implements StreamRDF {
         Node rootNode = NodeFactory.createURI(root.toASCIIString());
 
         // memorizing all prefixes requires an impossible amount of memory
-        // we do store all hashed prefixes however, but this is not reversible
-        // so we enumerate 'all' prefixes again,
-        // using the hashed prefixes to verify whether or not a prefix exists in the dataset
+        // so we store all hashed prefixes, but this is not reversible
+        // we enumerate 'all' prefixes instead, using the counts to verify each prefix's existence
         Deque<String> queue = new LinkedList<>();
         queue.add("");
+
+        // for logging purposes, remember the largest fragment
+        int mostWrittenCount = -1;
+        String mostWrittenPrefix = "";
 
         while (queue.size() > 0) {
             String current = queue.pop();
             Path filePath;
             Node thisNode;
+
+            // root node is hard coded
             if (current.length() == 0) {
                 filePath = this.outDirPath.resolve(".root.nt");
                 thisNode = NodeFactory.createURI(root.toASCIIString());
@@ -85,6 +133,14 @@ class FragmentSink implements StreamRDF {
 
             // add hypermedia controls to all non-leaf nodes
             long currentHash = this.hash(current);
+            if (this.written.containsKey(currentHash)) {
+                int currentWrittenCount = this.written.get(currentHash);
+                if (mostWrittenCount < 0 || currentWrittenCount > mostWrittenCount) {
+                    mostWrittenCount = currentWrittenCount;
+                    mostWrittenPrefix = current;
+                }
+            }
+
             if (current.length() == 0 || this.counts.get(currentHash) > 100) {
                 StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
 
@@ -142,44 +198,12 @@ class FragmentSink implements StreamRDF {
             }
         }
 
-    }
-
-    public void start() {
-    }
-
-    public void finish() {
-        for (StreamRDF out : this.outStreams.values()) {
-            out.finish();
-        }
-    }
-
-    public void triple(Triple triple) {
-        for ( Node p : properties ) {
-            if ( triple.getPredicate().equals(p) ) {
-                for (StreamRDF out : this.getOutStreams(triple.getObject().getLiteralLexicalForm())) {
-                    out.triple(triple);
-                }
-            }
-        }
-    }
-
-    public void quad(Quad quad) {
-        for ( Node p : properties ) {
-            if ( quad.getPredicate().equals(p) ) {
-                for (StreamRDF out : this.getOutStreams(quad.getObject().getLiteralLexicalForm())) {
-                    out.quad(quad);
-                }
-            }
-        }
-    }
-
-    public void base(String base) {
-    }
-
-    public void prefix(String prefix, String iri) {
+        System.out.println("Fullest page: " + mostWrittenPrefix + " @ " + mostWrittenCount);
     }
 
     private Iterable<StreamRDF> getOutStreams(String s)  {
+        // this method decides to which fragment a literal belongs
+
         ArrayList<StreamRDF> result = new ArrayList<>();
 
         // remove diacritics
@@ -187,8 +211,9 @@ class FragmentSink implements StreamRDF {
 
         // memorize all used characters so we can later piece together the hypermedia controls
         this.registerCharacters(cleanString);
+
+        boolean success = false;
         for (String token : this.tokenize(cleanString)) {
-            //String cleanToken = token.replaceAll("[^a-zA-Z]", "");
             for (String prefix : this.prefixes(token)) {
                 Long hash = this.hash(prefix);
                 if (!this.counts.containsKey(hash)) {
@@ -200,18 +225,42 @@ class FragmentSink implements StreamRDF {
                 int count = this.counts.get(hash);
                 this.counts.put(hash, count + 1);
 
-                boolean write = false;
-                write |= written < 100;
-                write |= (written < 200 && token.length() - prefix.length() < 2);
-                write |= (written < 300 && token.length() - prefix.length() < 1);
-                write |= (written < 400 && token.length() == prefix.length());
+                // naive approach to avoiding overfull fragments
+                // we aim at 400-800 triples per fragment
+                boolean write = written < 400;
+                write |= (written < 500 && token.length() - prefix.length() < 2);
+                write |= (written < 600 && token.length() - prefix.length() < 1);
+                write |= (written < 700 && token.length() == prefix.length());
                 write |= (written < 800 && token.length() == prefix.length() && token.length() > 4);
 
                 if (write) {
+                    success = true; // used to ensure every triple goes somewhere
                     result.add(this.getOutStream(prefix, hash));
                     this.written.put(hash, written + 1);
                 }
             }
+        }
+
+        if (!success) {
+            // we haven't written this triple anywhere yet; write it to the emptiest page
+            int lowestCount = -1;
+            String bestPrefix = "";
+
+            for (String token : this.tokenize(cleanString)) {
+                for (String prefix : this.prefixes(token)) {
+                    Long hash = this.hash(prefix);
+                    int written = this.written.get(hash);
+
+                    if (lowestCount < 0 || written < lowestCount) {
+                        lowestCount = written;
+                        bestPrefix = prefix;
+                    }
+                }
+            }
+
+            Long hash = this.hash(bestPrefix);
+            result.add(this.getOutStream(bestPrefix, hash));
+            this.written.put(hash, lowestCount + 1);
         }
         return result;
     }
@@ -245,9 +294,17 @@ class FragmentSink implements StreamRDF {
 
     private String normalize(String original) {
         String reduced = original.toLowerCase();
+
+        // normalize unicode string
+        // see http://www.unicode.org/reports/tr15/#Normalization_Forms_Table
         reduced = Normalizer.normalize(reduced, Normalizer.Form.NFKD);
+
+        // discard all Mark values
+        // see http://www.unicode.org/reports/tr44/#General_Category_Values
         reduced = reduced.replaceAll("\\p{M}", "");
-        reduced = reduced.replaceAll("[^\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}]", "");
+
+        // retain all letters/digits/whitespace
+        reduced = reduced.replaceAll("[^\\p{IsDigit}\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}]", "");
         return reduced;
     }
 
@@ -257,5 +314,17 @@ class FragmentSink implements StreamRDF {
             result.add(value.substring(0, i));
         }
         return result;
+    }
+
+    public void base(String base) {
+
+    }
+
+    public void prefix(String prefix, String iri) {
+
+    }
+
+    public void start() {
+
     }
 }

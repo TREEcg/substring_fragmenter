@@ -1,7 +1,6 @@
 package main.java;
 
-import java.util.HashSet;
-
+// simple object that Gson uses to deserialize the config.json file
 public class ConfigTask {
     public String input;
     public String[] properties;

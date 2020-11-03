@@ -16,36 +16,49 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class Main {
-    public static void deleteDirectoryRecursion(Path path) throws IOException {
+    public static void deleteDirectoryRecursive(Path path) throws IOException {
+        // delete a directory and all its contents
         if (Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) {
             try (DirectoryStream<Path> entries = Files.newDirectoryStream(path)) {
                 for (Path entry : entries) {
-                    deleteDirectoryRecursion(entry);
+                    deleteDirectoryRecursive(entry);
                 }
             }
         }
         Files.deleteIfExists(path);
     }
 
-    public static void handleTask(URI domain, String outDir, ConfigTask task, int maxFileHandles) throws IOException {
+    public static void handleTask(
+            URI domain,         // root URI used to identify all the fragments
+            String outDir,      // local path to write the data files to
+            ConfigTask task,    // description of the source data, and what to do with it
+            int maxFileHandles  // how many file handles can we have open while working
+    ) throws IOException {
         System.out.println("Parsing " + task.input);
+
+        // prepare the output directory
         Path inputFileName = Path.of(task.input);
         Path outDirPath = Path.of(outDir, task.name);
-        deleteDirectoryRecursion(outDirPath);
+        deleteDirectoryRecursive(outDirPath);
         Files.createDirectories(outDirPath);
+
+        // convert the given properties to Property objects
         ArrayList<Property> properties = Stream.of(task.properties)
                 .map(ResourceFactory::createProperty)
                 .collect(Collectors.toCollection(ArrayList::new));
 
+        // send all data through a FragmentSink
+        // which will pipe the triples to multiple fragment files
         FragmentSink fragmenter = new FragmentSink(properties, maxFileHandles, outDirPath);
         RDFParser.source(inputFileName).parse(fragmenter);
 
+        // we now know which fragments actually exist in the dataset
+        // so now is the time to create links between them
         System.out.println("Finalizing " + task.input);
         fragmenter.addHypermedia(domain.resolve("./" + task.name + "/"));
     }
 
     public static void main(String[] args) {
-
         Gson gson = new Gson();
         Path fileName = Path.of("config.json");
         try {
@@ -53,6 +66,8 @@ public class Main {
             Config config = gson.fromJson((blob), Config.class);
 
             for (ConfigTask task : config.tasks) {
+                // process each file, one by one
+                // this could be parallelized, but we'd just run into IO limitations
                 handleTask(URI.create(config.domain), config.outDir, task, config.maxFileHandles);
             }
 
