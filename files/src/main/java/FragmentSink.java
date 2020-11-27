@@ -3,7 +3,6 @@ package main.java;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.apache.jena.atlas.lib.CharSpace;
-import org.apache.jena.base.Sys;
 import org.apache.jena.datatypes.TypeMapper;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
@@ -34,6 +33,8 @@ class FragmentSink implements StreamRDF {
     protected final Path outDirPath;
     protected final Set<Character> charSet;
 
+    protected Optional<TripleBuffer> buffer;
+
     FragmentSink(ArrayList<Property> properties, int maxFileHandles, Path outDirPath) {
         this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8); // creates ntriples lines
         this.outStreams = new FifoMap<>(maxFileHandles);    // all open file handles
@@ -51,42 +52,104 @@ class FragmentSink implements StreamRDF {
         for ( int i = 0 ; i < properties.size() ; i++ ) {
             this.properties[i] = properties.get(i).asNode();
         }
+
+        this.buffer = Optional.empty();
+    }
+
+    public void flush(TripleBuffer buffer) {
+        Set<String> values = new HashSet<>();
+
+        for ( Node p : properties ) {
+            for ( Triple triple : buffer.getTriples()) {
+                if (triple.getPredicate().getURI().equals(p.getURI())) {
+                    values.add(triple.getObject().getLiteralLexicalForm());
+                }
+            }
+            for ( Quad quad : buffer.getQuads()) {
+                if (quad.getPredicate().getURI().equals(p.getURI())) {
+                    values.add(quad.getObject().getLiteralLexicalForm());
+                }
+            }
+        }
+
+        for (StreamRDF out : this.getOutStreams(values)) {
+            for ( Triple triple : buffer.getTriples()) {
+                out.triple(triple);
+            }
+            for ( Quad quad : buffer.getQuads()) {
+                out.quad(quad);
+            }
+        }
     }
 
     @Override
     public void triple(Triple triple) {
         if (triple.getSubject().isURI()) {
-            // blank nodes are pointless for what we're doing
-            for ( Node p : properties ) {
-                if (  triple.getPredicate().equals(p) ) {
-                    // predicate matches what's configured
-                    for (StreamRDF out : this.getOutStreams(triple.getObject().getLiteralLexicalForm())) {
-                        // write this triple to all relevant fragment files
-                        out.triple(triple);
-                    }
+            String subject = triple.getSubject().getURI();
+
+            if (this.buffer.isPresent()) {
+                TripleBuffer buffer = this.buffer.get();
+                if (buffer.subject != subject) {
+                    this.flush(buffer);
+                    this.buffer = Optional.of(new TripleBuffer(subject));
+                } else {
+                    int i = 9;
                 }
+            } else {
+                this.buffer = Optional.of(new TripleBuffer(subject));
             }
+
+            this.buffer.get().addTriple(triple);
         }
     }
 
     @Override
     public void quad(Quad quad) {
-        // same as this.triple, but for quads
-        for ( Node p : properties ) {
-            if ( quad.getPredicate().equals(p) ) {
-                for (StreamRDF out : this.getOutStreams(quad.getObject().getLiteralLexicalForm())) {
-                    out.quad(quad);
+        if (quad.getSubject().isURI()) {
+            String subject = quad.getSubject().getURI();
+
+            if (this.buffer.isPresent()) {
+                TripleBuffer buffer = this.buffer.get();
+                if (buffer.subject != subject) {
+                    this.flush(buffer);
+                    this.buffer = Optional.of(new TripleBuffer(subject));
                 }
+            } else {
+                this.buffer = Optional.of(new TripleBuffer(subject));
             }
+
+            this.buffer.get().addQuad(quad);
         }
     }
 
     @Override
     public void finish() {
+        if (this.buffer.isPresent()) {
+            this.flush(this.buffer.get());
+        }
+
         // flush all open file handles
         for (StreamRDF out : this.outStreams.values()) {
             out.finish();
         }
+    }
+
+    public List<List<String>> expandTokens(List<String> given) {
+        List<List<String>> result = new ArrayList<>();
+        for ( int i = 0; i < given.size(); i++) {
+            for(char c : this.charSet ) {
+                String replacementToken = given.get(i) + c;
+                List<String> tokens = new ArrayList<>(given);
+                tokens.set(i, replacementToken);
+                result.add(tokens);
+            }
+        }
+        for (char c:this.charSet) {
+            List<String> tokens = new ArrayList<>(given);
+            tokens.add("" + c);
+            result.add(tokens);
+        }
+        return result;
     }
 
     public void addHypermedia(URI root) throws IOException {
@@ -104,31 +167,33 @@ class FragmentSink implements StreamRDF {
         Node shaclPathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#path");
         Node shaclMinCountPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#minCount");
         Node alternatePathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
-        Node relationObject = NodeFactory.createURI("https://w3id.org/tree#PrefixRelation");
+        Node relationObject = NodeFactory.createURI("https://w3id.org/tree#SubstringRelation");
         Node rootNode = NodeFactory.createURI(root.toASCIIString());
 
         // memorizing all prefixes requires an impossible amount of memory
         // so we store all hashed prefixes, but this is not reversible
         // we enumerate 'all' prefixes instead, using the counts to verify each prefix's existence
-        Deque<String> queue = new LinkedList<>();
-        queue.add("");
+        Deque<List<String>> queue = new LinkedList<>();
+        List<String> start = new ArrayList<>();
+        queue.add(start);
 
         // for logging purposes, remember the largest fragment
         int mostWrittenCount = -1;
-        String mostWrittenPrefix = "";
+        List<String> mostWrittenPrefix = new ArrayList<>();
 
         while (queue.size() > 0) {
-            String current = queue.pop();
+            List<String> current = queue.pop();
             Path filePath;
             Node thisNode;
 
             // root node is hard coded
-            if (current.length() == 0) {
+            if (current.size() == 0) {
                 filePath = this.outDirPath.resolve(".root.nt");
                 thisNode = NodeFactory.createURI(root.toASCIIString());
             } else {
-                filePath = this.outDirPath.resolve(current + ".nt");
-                thisNode = NodeFactory.createURI(root.resolve("./" + current).toASCIIString());
+                String identifier = String.join("+", current);
+                filePath = this.outDirPath.resolve(identifier + ".nt");
+                thisNode = NodeFactory.createURI(root.resolve("./" + identifier).toASCIIString());
             }
 
             // add hypermedia controls to all non-leaf nodes
@@ -141,7 +206,7 @@ class FragmentSink implements StreamRDF {
                 }
             }
 
-            if (current.length() == 0 || this.counts.get(currentHash) > 100) {
+            if (current.size() == 0 || this.counts.get(currentHash) > 100) {
                 StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
 
                 // define this page as a subset of the collection as a whole
@@ -171,8 +236,7 @@ class FragmentSink implements StreamRDF {
 
                 // add links to the following data pages
                 // by just iterating over all known possible prefix extensions
-                for(char c : this.charSet ) {
-                    String next = current + c;
+                for( List<String> next : this.expandTokens(current) ) {
                     long nextHash = this.hash(next);
 
                     // checking the hash is faster than checking the file's existence - but may backfire
@@ -180,15 +244,17 @@ class FragmentSink implements StreamRDF {
                         queue.add(next);
                         int count = this.counts.get(nextHash);
 
-                        Node nextNode = NodeFactory.createURI(root.resolve("./" + next).toASCIIString());
-                        Node nextValue = NodeFactory.createLiteral(next);
+                        Node nextNode = NodeFactory.createURI(root.resolve("./" + String.join("+", next)).toASCIIString());
                         Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
 
-                        Node relationNode = NodeFactory.createBlankNode(next);
+                        Node relationNode = NodeFactory.createBlankNode(String.join("+", current));
                         out.triple(Triple.create(thisNode, relationPredicate, relationNode));
                         out.triple(Triple.create(relationNode, typePredicate, relationObject));
                         out.triple(Triple.create(relationNode, nodePredicate, nextNode));
-                        out.triple(Triple.create(relationNode, valuePredicate, nextValue));
+                        for (String token : next) {
+                            Node tokenValue = NodeFactory.createLiteral(token);
+                            out.triple(Triple.create(relationNode, valuePredicate, tokenValue));
+                        }
                         out.triple(Triple.create(relationNode, treePathPredicate, pathNode));
                         out.triple(Triple.create(nextNode, remainingPredicate, remainingNode));
                     }
@@ -201,67 +267,82 @@ class FragmentSink implements StreamRDF {
         System.out.println("Fullest page: " + mostWrittenPrefix + " @ " + mostWrittenCount);
     }
 
-    private Iterable<StreamRDF> getOutStreams(String s)  {
-        // this method decides to which fragment a literal belongs
-
-        ArrayList<StreamRDF> result = new ArrayList<>();
+    private Iterable<StreamRDF> getOutStreams(Iterable<String> values)  {
+        Set<List<String>> substringSet = new HashSet<>();
 
         // remove diacritics
-        String cleanString = this.normalize(s);
+        for ( String s : values) {
+            String cleanString = this.normalize(s);
 
-        // memorize all used characters so we can later piece together the hypermedia controls
-        this.registerCharacters(cleanString);
+            // memorize all used characters so we can later piece together the hypermedia controls
+            this.registerCharacters(cleanString);
 
-        boolean success = false;
-        for (String token : this.tokenize(cleanString)) {
-            for (String prefix : this.prefixes(token)) {
-                Long hash = this.hash(prefix);
-                if (!this.counts.containsKey(hash)) {
-                    this.counts.put(hash, 0);
-                    this.written.put(hash, 0);
-                }
-
-                int written = this.written.get(hash);
-                int count = this.counts.get(hash);
-                this.counts.put(hash, count + 1);
-
-                // naive approach to avoiding overfull fragments
-                // we aim at 400-800 triples per fragment
-                boolean write = written < 400;
-                write |= (written < 500 && token.length() - prefix.length() < 2);
-                write |= (written < 600 && token.length() - prefix.length() < 1);
-                write |= (written < 700 && token.length() == prefix.length());
-                write |= (written < 800 && token.length() == prefix.length() && token.length() > 4);
-
-                if (write) {
-                    success = true; // used to ensure every triple goes somewhere
-                    result.add(this.getOutStream(prefix, hash));
-                    this.written.put(hash, written + 1);
-                }
-            }
-        }
-
-        if (!success) {
-            // we haven't written this triple anywhere yet; write it to the emptiest page
-            int lowestCount = -1;
-            String bestPrefix = "";
-
+            boolean success = false;
             for (String token : this.tokenize(cleanString)) {
                 for (String prefix : this.prefixes(token)) {
-                    Long hash = this.hash(prefix);
-                    int written = this.written.get(hash);
+                    List<String> tokens = new ArrayList<>();
+                    tokens.add(prefix);
 
-                    if (lowestCount < 0 || written < lowestCount) {
-                        lowestCount = written;
-                        bestPrefix = prefix;
+                    Long hash = this.hash(tokens);
+                    if (!this.counts.containsKey(hash)) {
+                        this.counts.put(hash, 0);
+                        this.written.put(hash, 0);
+                    }
+
+                    int written = this.written.get(hash);
+                    int count = this.counts.get(hash);
+                    this.counts.put(hash, count + 1);
+
+                    // naive approach to avoiding overfull fragments
+                    // we aim at 400-800 triples per fragment
+                    boolean write = written < 400;
+                    write |= (written < 500 && token.length() - prefix.length() < 2);
+                    write |= (written < 600 && token.length() - prefix.length() < 1);
+                    write |= (written < 700 && token.length() == prefix.length());
+                    write |= (written < 800 && token.length() == prefix.length() && token.length() > 4);
+
+                    if (write) {
+                        success = true; // used to ensure every triple goes somewhere
+                        substringSet.add(tokens);
+                        //this.written.put(hash, written + 1);
                     }
                 }
             }
 
-            Long hash = this.hash(bestPrefix);
-            result.add(this.getOutStream(bestPrefix, hash));
-            this.written.put(hash, lowestCount + 1);
+            if (!success) {
+                // we haven't written this triple anywhere yet; write it to the emptiest page
+                int lowestCount = -1;
+                String bestPrefix = "";
+
+                for (String token : this.tokenize(cleanString)) {
+                    for (String prefix : this.prefixes(token)) {
+                        List<String> tokens = new ArrayList<>();
+                        tokens.add(prefix);
+                        Long hash = this.hash(tokens);
+                        int written = this.written.get(hash);
+
+                        if (lowestCount < 0 || written < lowestCount) {
+                            lowestCount = written;
+                            bestPrefix = prefix;
+                        }
+                    }
+                }
+
+                List<String> tokens = new ArrayList<>();
+                tokens.add(bestPrefix);
+                substringSet.add(tokens);
+            }
         }
+
+        ArrayList<StreamRDF> result = new ArrayList<>();
+
+        for ( List<String> tokens : substringSet ) {
+            Long hash = this.hash(tokens);
+            result.add(this.getOutStream(tokens, hash));
+            int written = this.written.get(hash);
+            this.written.put(hash, written + 1);
+        }
+
         return result;
     }
 
@@ -271,13 +352,19 @@ class FragmentSink implements StreamRDF {
         }
     }
 
-    private long hash(String s) {
-        return this.hasher.hashString(s, StandardCharsets.UTF_8).asLong();
+    private long hash(List<String> values) {
+        java.util.Collections.sort(values);
+        long result = 0;
+        for ( String s : values) {
+            result += this.hasher.hashString(s, StandardCharsets.UTF_8).asLong();
+        }
+        return result;
     }
 
-    private StreamRDF getOutStream(String prefix, Long hash)  {
+    private StreamRDF getOutStream(List<String> tokens, Long hash)  {
         if (!this.outStreams.containsKey(hash)) {
-            Path filePath = this.outDirPath.resolve(prefix + ".nt");
+            java.util.Collections.sort(tokens);
+            Path filePath = this.outDirPath.resolve(String.join("+", tokens) + ".nt");
             try {
                 this.outStreams.put(hash, StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true)));
             } catch (IOException e) {
