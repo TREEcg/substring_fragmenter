@@ -1,83 +1,86 @@
 package main.java;
 
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
 import org.apache.jena.atlas.lib.CharSpace;
-import org.apache.jena.datatypes.TypeMapper;
 import org.apache.jena.graph.Node;
-import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.graph.Triple;
-import org.apache.jena.rdf.model.*;
 import org.apache.jena.riot.out.NodeFormatter;
 import org.apache.jena.riot.out.NodeFormatterNT;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.riot.system.StreamRDFLib;
 import org.apache.jena.sparql.core.Quad;
 
+import javax.annotation.Nullable;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.text.Normalizer;
 import java.util.*;
 
-@SuppressWarnings("UnstableApiUsage")
 class FragmentSink implements StreamRDF {
-    protected final Node[] properties;
+    protected final List<Node> properties;
     protected final Map<Long, StreamRDF> outStreams;
     protected final Map<Long, Integer> counts;
     protected final Map<Long, Integer> written;
     protected final NodeFormatter nodeFmt;
-    protected final HashFunction hasher;
     protected final Path outDirPath;
     protected final Set<Character> charSet;
+    protected final Hasher hasher;
 
-    protected Optional<TripleBuffer> buffer;
+    @Nullable
+    protected TripleBuffer buffer;
 
-    FragmentSink(ArrayList<Property> properties, int maxFileHandles, Path outDirPath) {
+    FragmentSink(List<Node> properties, int maxFileHandles, Path outDirPath, Hasher hasher) {
+        this.hasher = hasher;
         this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8); // creates ntriples lines
         this.outStreams = new FifoMap<>(maxFileHandles);    // all open file handles
         this.counts = new HashMap<>();  // how often a prefix was encountered
         this.written = new HashMap<>(); // how often a prefix (fragment) was written to
 
         // some implementation/optimization details
-        this.hasher = Hashing.goodFastHash(64); // used to hash prefixes
         this.charSet = new HashSet<>(); // used to enumerate all possible prefixes when creating hypermedia links
 
         this.outDirPath = outDirPath; // root location to write to
 
         // stuff to filter on
-        this.properties = new Node[properties.size()];
-        for ( int i = 0 ; i < properties.size() ; i++ ) {
-            this.properties[i] = properties.get(i).asNode();
-        }
-
-        this.buffer = Optional.empty();
+        this.properties = properties;
+        this.buffer = null;
     }
 
-    public void flush(TripleBuffer buffer) {
-        Set<String> values = new HashSet<>();
+    public Map<Long, Integer> getCounts() {
+        return counts;
+    }
 
-        for ( Node p : properties ) {
-            for ( Triple triple : buffer.getTriples()) {
-                if (triple.getPredicate().getURI().equals(p.getURI())) {
-                    values.add(triple.getObject().getLiteralLexicalForm());
+    public Map<Long, Integer> getWritten() {
+        return written;
+    }
+
+    public Set<Character> getCharSet() {
+        return charSet;
+    }
+
+    public void flush() {
+        if (this.buffer != null) {
+            Set<String> values = new HashSet<>();
+            for ( Node p : properties ) {
+                for ( Triple triple : this.buffer.getTriples()) {
+                    if (triple.getPredicate().getURI().equals(p.getURI())) {
+                        values.add(triple.getObject().getLiteralLexicalForm());
+                    }
+                }
+                for ( Quad quad : this.buffer.getQuads()) {
+                    if (quad.getPredicate().getURI().equals(p.getURI())) {
+                        values.add(quad.getObject().getLiteralLexicalForm());
+                    }
                 }
             }
-            for ( Quad quad : buffer.getQuads()) {
-                if (quad.getPredicate().getURI().equals(p.getURI())) {
-                    values.add(quad.getObject().getLiteralLexicalForm());
-                }
-            }
-        }
 
-        for (StreamRDF out : this.getOutStreams(values)) {
-            for ( Triple triple : buffer.getTriples()) {
-                out.triple(triple);
-            }
-            for ( Quad quad : buffer.getQuads()) {
-                out.quad(quad);
+            for (StreamRDF out : this.getOutStreams(values)) {
+                for ( Triple triple : buffer.getTriples()) {
+                    out.triple(triple);
+                }
+                for ( Quad quad : buffer.getQuads()) {
+                    out.quad(quad);
+                }
             }
         }
     }
@@ -87,19 +90,16 @@ class FragmentSink implements StreamRDF {
         if (triple.getSubject().isURI()) {
             String subject = triple.getSubject().getURI();
 
-            if (this.buffer.isPresent()) {
-                TripleBuffer buffer = this.buffer.get();
-                if (buffer.subject != subject) {
-                    this.flush(buffer);
-                    this.buffer = Optional.of(new TripleBuffer(subject));
-                } else {
-                    int i = 9;
+            if (this.buffer != null) {
+                if (!this.buffer.subject.equals(subject)) {
+                    this.flush();
+                    this.buffer = new TripleBuffer(subject);
                 }
             } else {
-                this.buffer = Optional.of(new TripleBuffer(subject));
+                this.buffer = new TripleBuffer(subject);
             }
 
-            this.buffer.get().addTriple(triple);
+            this.buffer.addTriple(triple);
         }
     }
 
@@ -108,163 +108,29 @@ class FragmentSink implements StreamRDF {
         if (quad.getSubject().isURI()) {
             String subject = quad.getSubject().getURI();
 
-            if (this.buffer.isPresent()) {
-                TripleBuffer buffer = this.buffer.get();
-                if (buffer.subject != subject) {
-                    this.flush(buffer);
-                    this.buffer = Optional.of(new TripleBuffer(subject));
+            if (this.buffer != null) {
+                if (!this.buffer.subject.equals(subject)) {
+                    this.flush();
+                    this.buffer = new TripleBuffer(subject);
                 }
             } else {
-                this.buffer = Optional.of(new TripleBuffer(subject));
+                this.buffer = new TripleBuffer(subject);
             }
 
-            this.buffer.get().addQuad(quad);
+            this.buffer.addQuad(quad);
         }
     }
 
     @Override
     public void finish() {
-        if (this.buffer.isPresent()) {
-            this.flush(this.buffer.get());
+        if (this.buffer != null) {
+            this.flush();
         }
 
         // flush all open file handles
         for (StreamRDF out : this.outStreams.values()) {
             out.finish();
         }
-    }
-
-    public List<List<String>> expandTokens(List<String> given) {
-        List<List<String>> result = new ArrayList<>();
-        for ( int i = 0; i < given.size(); i++) {
-            for(char c : this.charSet ) {
-                String replacementToken = given.get(i) + c;
-                List<String> tokens = new ArrayList<>(given);
-                tokens.set(i, replacementToken);
-                result.add(tokens);
-            }
-        }
-        for (char c:this.charSet) {
-            List<String> tokens = new ArrayList<>(given);
-            tokens.add("" + c);
-            result.add(tokens);
-        }
-        return result;
-    }
-
-    public void addHypermedia(URI root) throws IOException {
-        // define some Node objects we'll need
-        // this is probably not the most idiomatic way
-        Node subsetPredicate = NodeFactory.createURI("http://rdfs.org/ns/void#subset");
-        Node relationPredicate = NodeFactory.createURI("https://w3id.org/tree#relation");
-        Node typePredicate = NodeFactory.createURI("http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
-        Node nodePredicate = NodeFactory.createURI("https://w3id.org/tree#node");
-        Node valuePredicate = NodeFactory.createURI("https://w3id.org/tree#value");
-        Node remainingPredicate = NodeFactory.createURI("https://w3id.org/tree#remainingItems");
-        Node treePathPredicate = NodeFactory.createURI("https://w3id.org/tree#path");
-        Node treeShapePredicate = NodeFactory.createURI("https://w3id.org/tree#shape");
-        Node shaclPropertyPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
-        Node shaclPathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#path");
-        Node shaclMinCountPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#minCount");
-        Node alternatePathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
-        Node relationObject = NodeFactory.createURI("https://w3id.org/tree#SubstringRelation");
-        Node rootNode = NodeFactory.createURI(root.toASCIIString());
-
-        // memorizing all prefixes requires an impossible amount of memory
-        // so we store all hashed prefixes, but this is not reversible
-        // we enumerate 'all' prefixes instead, using the counts to verify each prefix's existence
-        Deque<List<String>> queue = new LinkedList<>();
-        List<String> start = new ArrayList<>();
-        queue.add(start);
-
-        // for logging purposes, remember the largest fragment
-        int mostWrittenCount = -1;
-        List<String> mostWrittenPrefix = new ArrayList<>();
-
-        while (queue.size() > 0) {
-            List<String> current = queue.pop();
-            Path filePath;
-            Node thisNode;
-
-            // root node is hard coded
-            if (current.size() == 0) {
-                filePath = this.outDirPath.resolve(".root.nt");
-                thisNode = NodeFactory.createURI(root.toASCIIString());
-            } else {
-                String identifier = String.join("+", current);
-                filePath = this.outDirPath.resolve(identifier + ".nt");
-                thisNode = NodeFactory.createURI(root.resolve("./" + identifier).toASCIIString());
-            }
-
-            // add hypermedia controls to all non-leaf nodes
-            long currentHash = this.hash(current);
-            if (this.written.containsKey(currentHash)) {
-                int currentWrittenCount = this.written.get(currentHash);
-                if (mostWrittenCount < 0 || currentWrittenCount > mostWrittenCount) {
-                    mostWrittenCount = currentWrittenCount;
-                    mostWrittenPrefix = current;
-                }
-            }
-
-            if (current.size() == 0 || this.counts.get(currentHash) > 100) {
-                StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
-
-                // define this page as a subset of the collection as a whole
-                out.triple(Triple.create(rootNode, subsetPredicate, thisNode));
-
-                // create a shacl path object that defines which properties are contained in this dataset
-                Node pathNode;
-                if (this.properties.length > 1) {
-                    pathNode = NodeFactory.createBlankNode("path_node");
-                    for (Node propertyNode : this.properties) {
-                        out.triple(Triple.create(pathNode, alternatePathPredicate, propertyNode));
-                    }
-                } else {
-                    pathNode = this.properties[0];
-                }
-
-                // link the previously-defined shacl path to the dataset
-                // this communicates to clients which data can be found here
-                Node shapeNode = NodeFactory.createBlankNode("shape_node");
-                out.triple(Triple.create(rootNode, treeShapePredicate, shapeNode));
-                Node propertyNode = NodeFactory.createBlankNode("property_node");
-                out.triple(Triple.create(shapeNode, shaclPropertyPredicate, propertyNode));
-                out.triple(Triple.create(propertyNode, shaclPathPredicate, pathNode));
-                int temp = 1;
-                Node tempNode = NodeFactory.createLiteralByValue(temp, TypeMapper.getInstance().getTypeByValue(temp));
-                out.triple(Triple.create(propertyNode, shaclMinCountPredicate, tempNode));
-
-                // add links to the following data pages
-                // by just iterating over all known possible prefix extensions
-                for( List<String> next : this.expandTokens(current) ) {
-                    long nextHash = this.hash(next);
-
-                    // checking the hash is faster than checking the file's existence - but may backfire
-                    if (this.counts.containsKey(nextHash)) {
-                        queue.add(next);
-                        int count = this.counts.get(nextHash);
-
-                        Node nextNode = NodeFactory.createURI(root.resolve("./" + String.join("+", next)).toASCIIString());
-                        Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
-
-                        Node relationNode = NodeFactory.createBlankNode(String.join("+", current));
-                        out.triple(Triple.create(thisNode, relationPredicate, relationNode));
-                        out.triple(Triple.create(relationNode, typePredicate, relationObject));
-                        out.triple(Triple.create(relationNode, nodePredicate, nextNode));
-                        for (String token : next) {
-                            Node tokenValue = NodeFactory.createLiteral(token);
-                            out.triple(Triple.create(relationNode, valuePredicate, tokenValue));
-                        }
-                        out.triple(Triple.create(relationNode, treePathPredicate, pathNode));
-                        out.triple(Triple.create(nextNode, remainingPredicate, remainingNode));
-                    }
-                }
-
-                out.finish();
-            }
-        }
-
-        System.out.println("Fullest page: " + mostWrittenPrefix + " @ " + mostWrittenCount);
     }
 
     private Iterable<StreamRDF> getOutStreams(Iterable<String> values)  {
@@ -283,7 +149,7 @@ class FragmentSink implements StreamRDF {
                     List<String> tokens = new ArrayList<>();
                     tokens.add(prefix);
 
-                    Long hash = this.hash(tokens);
+                    Long hash = this.hasher.hash(tokens);
                     if (!this.counts.containsKey(hash)) {
                         this.counts.put(hash, 0);
                         this.written.put(hash, 0);
@@ -318,7 +184,7 @@ class FragmentSink implements StreamRDF {
                     for (String prefix : this.prefixes(token)) {
                         List<String> tokens = new ArrayList<>();
                         tokens.add(prefix);
-                        Long hash = this.hash(tokens);
+                        Long hash = this.hasher.hash(tokens);
                         int written = this.written.get(hash);
 
                         if (lowestCount < 0 || written < lowestCount) {
@@ -337,7 +203,7 @@ class FragmentSink implements StreamRDF {
         ArrayList<StreamRDF> result = new ArrayList<>();
 
         for ( List<String> tokens : substringSet ) {
-            Long hash = this.hash(tokens);
+            Long hash = this.hasher.hash(tokens);
             result.add(this.getOutStream(tokens, hash));
             int written = this.written.get(hash);
             this.written.put(hash, written + 1);
@@ -350,15 +216,6 @@ class FragmentSink implements StreamRDF {
         for (char c : s.toCharArray()) {
             this.charSet.add(c);
         }
-    }
-
-    private long hash(List<String> values) {
-        java.util.Collections.sort(values);
-        long result = 0;
-        for ( String s : values) {
-            result += this.hasher.hashString(s, StandardCharsets.UTF_8).asLong();
-        }
-        return result;
     }
 
     private StreamRDF getOutStream(List<String> tokens, Long hash)  {
