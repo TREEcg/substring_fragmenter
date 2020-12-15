@@ -4,18 +4,16 @@ Imagine a jQuery-style autocompletion widget without hardcoded data options, bui
 
 ## Setup
 
-1. Gather all input data sources into one directory
-   1. In `docker-compose.yml`, replace `/data/dumps/path` on line 7 with the chosen directory
-   2. *Note* that this directory will be mounted as `/input` in the `files` container
-2. Create a directory for all data fragments
-   1. In `docker-compose.yml`, replace `/fragment/path` on lines 8 _and_ 15 with the created directory
-   2. Note that this directory will be mounted as `/output` in the `files` container, _and_ as `/usr/share/nginx/html` in the `server` container. 
+1. Create a docker volume: `docker volume create fragments_volume`
+   1. _Optional_: If a different volume name was chosen, update the volume mappings of both services in `docker-compose.yml`.
+2. Gather all input data sources into one directory
+   1. In `docker-compose.yml`, replace `/data/dumps/path` on line 7 with the chosen directory. This directory will be mounted as `/input` in the `files` container
 3. Create `files/config.json`, using `files/example_config.json` as a template.
-   1. `maxFileHandles` is the maximum number of open file handles the fragmenter may have open; 1024 is the common limit set by operating systems.
+   1. `maxFileHandles` is the maximum number of open file handles the fragmenter may have open; 1024 is a common limit set by operating systems.
    2. `outDir` can remain unchanged, this is a mounted volume determined by `docker-compose.yml`
-   3. `domain` is used as the root URI to base every fragment's identifier on
+   3. `domain` is used as the root URI to base every fragment's identifier on, so is technically not just the domain but also the protocol, the base path, ... 
    4. `tasks` is a list of all datasets, and how they should be processed
-      1. `input` is simply the path to the file, note that all files should be in the `/input` directory, as determined by `docker-compose.yml`
+      1. `input` is the path to the file, which should be in the `/input` directory as determined by `docker-compose.yml`
       2. `name` will become part of each fragment's path, to keep the fragmented datasets separate
       3. `properties` is a list of all predicate (URIs) to fragment this dataset on
 
@@ -42,7 +40,7 @@ Input data is processed in 3 steps:
 
 2. Discovered literals are processed to obtain a set of fragment files to pipe the triples to
 
-   1. The literal is normalized to [NFKD](http://www.unicode.org/reports/tr15/#Normalization_Forms_Table), and lowercased
+   1. The literal is normalized to [NFKD](http://www.unicode.org/reports/tr15/#Normalization_Forms_Table); filtered to just the Letters (L), Numbers (N) and Separator (Z) Unicode classes; and then lowercased
 
    2. The normalized literal is tokenized by whitespace
 
