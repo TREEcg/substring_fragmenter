@@ -1,7 +1,6 @@
 package main.java;
 
 import com.google.gson.Gson;
-import org.apache.jena.graph.FrontsNode;
 import org.apache.jena.graph.Node;
 import org.apache.jena.rdf.model.Property;
 import org.apache.jena.rdf.model.ResourceFactory;
@@ -15,7 +14,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
+
+import static java.lang.System.exit;
 
 public class Main {
     public static void deleteDirectoryRecursive(Path path) throws IOException {
@@ -69,7 +69,7 @@ public class Main {
                 outDirPath,
                 fragmenter.getCharSet()
         );
-        controls.addHypermedia(domain.resolve("./" + task.name + "/"));
+        controls.addHypermedia(domain.toASCIIString() + "/" + task.name + "/");
     }
 
     public static void main(String[] args) {
@@ -84,9 +84,9 @@ public class Main {
                 // this could be parallelized, but we'd just run into IO limitations
                 handleTask(URI.create(config.domain), config.outDir, task, config.maxFileHandles);
             }
-
         } catch (IOException e) {
-            e.printStackTrace();
+            e.printStackTrace(System.out);
+            exit(1);
         }
     }
 }

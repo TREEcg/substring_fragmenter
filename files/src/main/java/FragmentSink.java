@@ -12,9 +12,12 @@ import org.apache.jena.sparql.core.Quad;
 import javax.annotation.Nullable;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.nio.file.Path;
 import java.text.Normalizer;
 import java.util.*;
+
+import static java.lang.System.exit;
 
 class FragmentSink implements StreamRDF {
     protected final List<Node> properties;
@@ -223,9 +226,12 @@ class FragmentSink implements StreamRDF {
             java.util.Collections.sort(tokens);
             Path filePath = this.outDirPath.resolve(String.join("+", tokens) + ".nt");
             try {
-                this.outStreams.put(hash, StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true)));
+                OutputStreamWriter fileWriter = new FileWriter(String.valueOf(filePath), true);
+                StreamRDF rdfWriter = StreamRDFLib.writer(fileWriter);
+                this.outStreams.put(hash, rdfWriter);
             } catch (IOException e) {
-                e.printStackTrace();
+                e.printStackTrace(System.out);
+                exit(1);
             }
         }
 

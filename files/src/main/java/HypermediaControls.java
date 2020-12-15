@@ -55,7 +55,7 @@ public class HypermediaControls {
         return result;
     }
 
-    public void addHypermedia(URI root) throws IOException {
+    public void addHypermedia(String root) throws IOException {
         // define some Node objects we'll need
         // this is probably not the most idiomatic way
         Node subsetPredicate = NodeFactory.createURI("http://rdfs.org/ns/void#subset");
@@ -71,7 +71,7 @@ public class HypermediaControls {
         Node shaclMinCountPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#minCount");
         Node alternatePathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
         Node relationObject = NodeFactory.createURI("https://w3id.org/tree#SubstringRelation");
-        Node rootNode = NodeFactory.createURI(root.toASCIIString());
+        Node rootNode = NodeFactory.createURI(root);
 
         // memorizing all prefixes requires an impossible amount of memory
         // so we store all hashed prefixes, but this is not reversible
@@ -92,11 +92,11 @@ public class HypermediaControls {
             // root node is hard coded
             if (current.size() == 0) {
                 filePath = this.outDirPath.resolve(".root.nt");
-                thisNode = NodeFactory.createURI(root.toASCIIString());
+                thisNode = NodeFactory.createURI(root);
             } else {
                 String identifier = String.join("+", current);
                 filePath = this.outDirPath.resolve(identifier + ".nt");
-                thisNode = NodeFactory.createURI(root.resolve("./" + identifier).toASCIIString());
+                thisNode = NodeFactory.createURI(root + identifier);
             }
 
             // add hypermedia controls to all non-leaf nodes
@@ -147,10 +147,10 @@ public class HypermediaControls {
                         queue.add(next);
                         int count = this.counts.get(nextHash);
 
-                        Node nextNode = NodeFactory.createURI(root.resolve("./" + String.join("+", next)).toASCIIString());
+                        Node nextNode = NodeFactory.createURI(root + String.join("+", next));
                         Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
 
-                        Node relationNode = NodeFactory.createBlankNode(String.join("+", current));
+                        Node relationNode = NodeFactory.createBlankNode(String.join("+", next));
                         out.triple(Triple.create(thisNode, relationPredicate, relationNode));
                         out.triple(Triple.create(relationNode, typePredicate, relationObject));
                         out.triple(Triple.create(relationNode, nodePredicate, nextNode));
