@@ -136,22 +136,36 @@ class FragmentSink implements StreamRDF {
         }
     }
 
-    private Iterable<StreamRDF> getOutStreams(Iterable<String> values)  {
+    private List<Integer> startingPositions(String value) {
+        boolean flagNext = true;
+        List<Integer> result = new ArrayList<>();
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == ' ') {
+                flagNext = true;
+            } else {
+                if (flagNext) {
+                    flagNext = false;
+                    result.add(i);
+                }
+            }
+        }
+        return result;
+    }
+
+    private Set<List<String>> selectSubstrings(String value) {
         Set<List<String>> substringSet = new HashSet<>();
+        String valueValue = value + value;
 
-        // remove diacritics
-        for ( String s : values) {
-            String cleanString = this.normalize(s);
+        outerLoop:
+        for (Integer start : this.startingPositions(value)) {
+            String currentSubstring = "";
+            for (int i = start; i < start + value.length(); i++) {
+                char newChar = valueValue.charAt(i);
+                currentSubstring += newChar;
 
-            // memorize all used characters so we can later piece together the hypermedia controls
-            this.registerCharacters(cleanString);
-
-            boolean success = false;
-            for (String token : this.tokenize(cleanString)) {
-                for (String prefix : this.prefixes(token)) {
-                    List<String> tokens = new ArrayList<>();
-                    tokens.add(prefix);
-
+                if (newChar != ' ') {
+                    List<String> tokens = Arrays.asList(currentSubstring.split(" "));
                     Long hash = this.hasher.hash(tokens);
                     if (!this.counts.containsKey(hash)) {
                         this.counts.put(hash, 0);
@@ -162,45 +176,42 @@ class FragmentSink implements StreamRDF {
                     int count = this.counts.get(hash);
                     this.counts.put(hash, count + 1);
 
-                    // naive approach to avoiding overfull fragments
-                    // we aim at 400-800 triples per fragment
-                    boolean write = written < 400;
-                    write |= (written < 500 && token.length() - prefix.length() < 2);
-                    write |= (written < 600 && token.length() - prefix.length() < 1);
-                    write |= (written < 700 && token.length() == prefix.length());
-                    write |= (written < 800 && token.length() == prefix.length() && token.length() > 4);
-
-                    if (write) {
-                        success = true; // used to ensure every triple goes somewhere
+                    if (written < 100) {
+                        this.written.put(hash, written + 1);
                         substringSet.add(tokens);
-                        //this.written.put(hash, written + 1);
+                        continue outerLoop;
                     }
                 }
             }
 
-            if (!success) {
-                // we haven't written this triple anywhere yet; write it to the emptiest page
-                int lowestCount = -1;
-                String bestPrefix = "";
-
-                for (String token : this.tokenize(cleanString)) {
-                    for (String prefix : this.prefixes(token)) {
-                        List<String> tokens = new ArrayList<>();
-                        tokens.add(prefix);
-                        Long hash = this.hasher.hash(tokens);
-                        int written = this.written.get(hash);
-
-                        if (lowestCount < 0 || written < lowestCount) {
-                            lowestCount = written;
-                            bestPrefix = prefix;
-                        }
-                    }
-                }
-
-                List<String> tokens = new ArrayList<>();
-                tokens.add(bestPrefix);
-                substringSet.add(tokens);
+            // Last resort, all tried fragments were full
+            List<String> tokens = Arrays.asList(currentSubstring.split(" "));
+            Long hash = this.hasher.hash(tokens);
+            if (!this.counts.containsKey(hash)) {
+                this.counts.put(hash, 0);
+                this.written.put(hash, 0);
             }
+
+            int written = this.written.get(hash);
+            int count = this.counts.get(hash);
+            this.counts.put(hash, count + 1);
+            this.written.put(hash, written + 1);
+            substringSet.add(tokens);
+        }
+
+        return substringSet;
+    }
+
+    private Iterable<StreamRDF> getOutStreams(Iterable<String> values)  {
+        Set<List<String>> substringSet = new HashSet<>();
+
+        // remove diacritics
+        for ( String s : values) {
+            String cleanString = this.normalize(s);
+
+            // memorize all used characters so we can later piece together the hypermedia controls
+            this.registerCharacters(cleanString);
+            substringSet.addAll(this.selectSubstrings(cleanString));
         }
 
         ArrayList<StreamRDF> result = new ArrayList<>();
@@ -238,10 +249,6 @@ class FragmentSink implements StreamRDF {
         return this.outStreams.get(hash);
     }
 
-    private Iterable<String> tokenize(String value) {
-        return Arrays.asList(value.split(" "));
-    }
-
     private String normalize(String original) {
         String reduced = original.toLowerCase();
 
@@ -256,14 +263,6 @@ class FragmentSink implements StreamRDF {
         // retain all letters/digits/whitespace
         reduced = reduced.replaceAll("[^\\p{IsDigit}\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}]", "");
         return reduced;
-    }
-
-    private Iterable<String> prefixes(String value) {
-        ArrayList<String> result = new ArrayList<>();
-        for (int i = value.length(); i > 0; i--) {
-            result.add(value.substring(0, i));
-        }
-        return result;
     }
 
     public void base(String base) {
