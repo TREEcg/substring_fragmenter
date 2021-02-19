@@ -17,7 +17,9 @@ public class Hasher {
         java.util.Collections.sort(values);
         long result = 0;
         for ( String s : values) {
-            result += this.hasher.hashString(s, StandardCharsets.UTF_8).asLong();
+            if (s.length() > 0) {
+                result += this.hasher.hashString(s, StandardCharsets.UTF_8).asLong();
+            }
         }
         return result;
     }
