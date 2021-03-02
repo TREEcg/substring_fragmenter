@@ -5,15 +5,19 @@ services:
     image: files
     volumes:
       - /data/dumps/path:/input # change /data/dumps/path to the location of the RDF data dumps, make sure to add the dumps to files/config.json as well
-      - /fragment/path:/output  # change /fragment/path to the desired location of the fragments
+      - fragments_volume:/output
     build:
       context: ./files
 
   server:
     image: server
     volumes:
-      - /fragment/path:/usr/share/nginx/html # change /fragment/path to the location of the fragments, cfr. the files service
+      - fragments_volume:/usr/share/nginx/html
     ports:
       - "80:80"
     build:
       context: ./server
+
+volumes:
+  fragments_volume:
+    external: true

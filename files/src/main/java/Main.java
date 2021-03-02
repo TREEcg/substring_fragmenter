@@ -1,6 +1,7 @@
 package main.java;
 
 import com.google.gson.Gson;
+import org.apache.jena.graph.Node;
 import org.apache.jena.rdf.model.Property;
 import org.apache.jena.rdf.model.ResourceFactory;
 import org.apache.jena.riot.RDFParser;
@@ -12,8 +13,9 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.List;
+
+import static java.lang.System.exit;
 
 public class Main {
     public static void deleteDirectoryRecursive(Path path) throws IOException {
@@ -43,19 +45,31 @@ public class Main {
         Files.createDirectories(outDirPath);
 
         // convert the given properties to Property objects
-        ArrayList<Property> properties = Stream.of(task.properties)
-                .map(ResourceFactory::createProperty)
-                .collect(Collectors.toCollection(ArrayList::new));
+        List<Node> properties = new ArrayList<>();
+        for (String property : task.properties) {
+            Property property1 = ResourceFactory.createProperty(property);
+            Node asNode = property1.asNode();
+            properties.add(asNode);
+        }
 
         // send all data through a FragmentSink
         // which will pipe the triples to multiple fragment files
-        FragmentSink fragmenter = new FragmentSink(properties, maxFileHandles, outDirPath);
+        Hasher hasher = new Hasher();
+        FragmentSink fragmenter = new FragmentSink(properties, maxFileHandles, outDirPath, hasher);
         RDFParser.source(inputFileName).parse(fragmenter);
 
         // we now know which fragments actually exist in the dataset
         // so now is the time to create links between them
         System.out.println("Finalizing " + task.input);
-        fragmenter.addHypermedia(domain.resolve("./" + task.name + "/"));
+        HypermediaControls controls = new HypermediaControls(
+                properties,
+                fragmenter.getCounts(),
+                fragmenter.getWritten(),
+                hasher,
+                outDirPath,
+                fragmenter.getCharSet()
+        );
+        controls.addHypermedia(domain.toASCIIString() + "/" + task.name + "/");
     }
 
     public static void main(String[] args) {
@@ -70,9 +84,9 @@ public class Main {
                 // this could be parallelized, but we'd just run into IO limitations
                 handleTask(URI.create(config.domain), config.outDir, task, config.maxFileHandles);
             }
-
         } catch (IOException e) {
-            e.printStackTrace();
+            e.printStackTrace(System.out);
+            exit(1);
         }
     }
 }
