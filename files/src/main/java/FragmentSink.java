@@ -3,6 +3,7 @@ package main.java;
 import org.apache.jena.atlas.lib.CharSpace;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
+import org.apache.jena.graph.impl.LiteralLabel;
 import org.apache.jena.riot.out.NodeFormatter;
 import org.apache.jena.riot.out.NodeFormatterNT;
 import org.apache.jena.riot.system.StreamRDF;
@@ -28,11 +29,12 @@ class FragmentSink implements StreamRDF {
     protected final Path outDirPath;
     protected final Set<Character> charSet;
     protected final Hasher hasher;
+    protected final String extension;
 
     @Nullable
     protected TripleBuffer buffer;
 
-    FragmentSink(List<Node> properties, int maxFileHandles, Path outDirPath, Hasher hasher) {
+    FragmentSink(List<Node> properties, int maxFileHandles, Path outDirPath, Hasher hasher, String extension) {
         this.hasher = hasher;
         this.nodeFmt = new NodeFormatterNT(CharSpace.UTF8); // creates ntriples lines
         this.outStreams = new FifoMap<>(maxFileHandles);    // all open file handles
@@ -47,6 +49,7 @@ class FragmentSink implements StreamRDF {
         // stuff to filter on
         this.properties = properties;
         this.buffer = null;
+        this.extension = extension;
     }
 
     public Map<Long, Integer> getCounts() {
@@ -71,8 +74,11 @@ class FragmentSink implements StreamRDF {
                     }
                 }
                 for ( Quad quad : this.buffer.getQuads()) {
-                    if (quad.getPredicate().getURI().equals(p.getURI())) {
-                        values.add(quad.getObject().getLiteralLexicalForm());
+                    if (quad.getPredicate().getURI().equals(p.getURI()) && quad.getObject().isLiteral()) {
+                        String language = quad.getObject().getLiteralLanguage();
+                        if (!language.equals("ja") && !language.equals("zh") && !language.equals("ko") && !language.equals("zh-cn")) {
+                            values.add(quad.getObject().getLiteralLexicalForm());
+                        }
                     }
                 }
             }
@@ -165,7 +171,7 @@ class FragmentSink implements StreamRDF {
                 currentSubstring += newChar;
 
                 if (newChar != ' ') {
-                    List<String> tokens = Arrays.asList(currentSubstring.split(" "));
+                    List<String> tokens = Arrays.asList(currentSubstring.strip().split("\\s+"));
                     Long hash = this.hasher.hash(tokens);
                     if (!this.counts.containsKey(hash)) {
                         this.counts.put(hash, 0);
@@ -235,7 +241,7 @@ class FragmentSink implements StreamRDF {
     private StreamRDF getOutStream(List<String> tokens, Long hash)  {
         if (!this.outStreams.containsKey(hash)) {
             java.util.Collections.sort(tokens);
-            Path filePath = this.outDirPath.resolve(String.join("+", tokens) + ".nt");
+            Path filePath = this.outDirPath.resolve(String.join("+", tokens) + this.extension);
             try {
                 OutputStreamWriter fileWriter = new FileWriter(String.valueOf(filePath), true);
                 StreamRDF rdfWriter = StreamRDFLib.writer(fileWriter);

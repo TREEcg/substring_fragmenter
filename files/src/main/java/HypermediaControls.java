@@ -9,7 +9,6 @@ import org.apache.jena.riot.system.StreamRDFLib;
 
 import java.io.FileWriter;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -20,6 +19,7 @@ public class HypermediaControls {
     protected final Path outDirPath;
     protected final Set<Character> charSet;
     protected final Hasher hasher;
+    protected final String extension;
 
     HypermediaControls(
             List<Node> properties,
@@ -27,7 +27,8 @@ public class HypermediaControls {
             Map<Long, Integer> written,
             Hasher hasher,
             Path outDirPath,
-            Set<Character> charSet
+            Set<Character> charSet,
+            String extension
     ) {
         this.properties = properties;
         this.counts = counts;
@@ -35,6 +36,7 @@ public class HypermediaControls {
         this.outDirPath = outDirPath; // root location to write to
         this.charSet = charSet;
         this.hasher = hasher;
+        this.extension = extension;
     }
 
     public List<List<String>> expandTokens(List<String> given) {
@@ -91,12 +93,12 @@ public class HypermediaControls {
 
             // root node is hard coded
             if (current.size() == 0) {
-                filePath = this.outDirPath.resolve(".root.nt");
+                filePath = this.outDirPath.resolve(".root" + this.extension);
                 thisNode = NodeFactory.createURI(root);
             } else {
                 String identifier = String.join("+", current);
-                filePath = this.outDirPath.resolve(identifier + ".nt");
-                thisNode = NodeFactory.createURI(root + identifier + ".nt");
+                filePath = this.outDirPath.resolve(identifier + this.extension);
+                thisNode = NodeFactory.createURI(root + identifier + this.extension);
             }
 
             // add hypermedia controls to all non-leaf nodes
@@ -146,8 +148,7 @@ public class HypermediaControls {
                     if (this.counts.containsKey(nextHash)) {
                         queue.add(next);
                         int count = this.counts.get(nextHash);
-                        
-                        Node nextNode = NodeFactory.createURI(root + String.join("+", next) + ".nt");
+                        Node nextNode = NodeFactory.createURI(root + String.join("+", next) + this.extension);
                         Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
 
                         Node relationNode = NodeFactory.createBlankNode(String.join("+", next));

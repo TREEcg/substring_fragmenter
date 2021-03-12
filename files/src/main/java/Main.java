@@ -34,7 +34,8 @@ public class Main {
             URI domain,         // root URI used to identify all the fragments
             String outDir,      // local path to write the data files to
             ConfigTask task,    // description of the source data, and what to do with it
-            int maxFileHandles  // how many file handles can we have open while working
+            int maxFileHandles,  // how many file handles can we have open while working
+            String extension
     ) throws IOException {
         System.out.println("Parsing " + task.input);
 
@@ -55,7 +56,7 @@ public class Main {
         // send all data through a FragmentSink
         // which will pipe the triples to multiple fragment files
         Hasher hasher = new Hasher();
-        FragmentSink fragmenter = new FragmentSink(properties, maxFileHandles, outDirPath, hasher);
+        FragmentSink fragmenter = new FragmentSink(properties, maxFileHandles, outDirPath, hasher, extension);
         RDFParser.source(inputFileName).parse(fragmenter);
 
         // we now know which fragments actually exist in the dataset
@@ -67,7 +68,8 @@ public class Main {
                 fragmenter.getWritten(),
                 hasher,
                 outDirPath,
-                fragmenter.getCharSet()
+                fragmenter.getCharSet(),
+                extension
         );
         controls.addHypermedia(domain.toASCIIString() + "/" + task.name + "/");
     }
@@ -82,7 +84,8 @@ public class Main {
             for (ConfigTask task : config.tasks) {
                 // process each file, one by one
                 // this could be parallelized, but we'd just run into IO limitations
-                handleTask(URI.create(config.domain), config.outDir, task, config.maxFileHandles);
+                String extension = task.extension == null ? ".nt" : task.extension;
+                handleTask(URI.create(config.domain), config.outDir, task, config.maxFileHandles, extension);
             }
         } catch (IOException e) {
             e.printStackTrace(System.out);
