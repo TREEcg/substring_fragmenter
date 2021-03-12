@@ -4,7 +4,7 @@ services:
   files:
     image: files
     volumes:
-      - /home/hdelva/termen:/input # change /data/dumps/path to the location of the RDF data dumps, make sure to add the dumps to files/config.json as well
+      - /data/dumps/path:/input # change /data/dumps/path to the location of the RDF data dumps, make sure to add the dumps to files/config.json as well
       - fragments_volume:/output
     build:
       context: ./files

@@ -96,7 +96,7 @@ public class HypermediaControls {
             } else {
                 String identifier = String.join("+", current);
                 filePath = this.outDirPath.resolve(identifier + ".nt");
-                thisNode = NodeFactory.createURI(root + identifier);
+                thisNode = NodeFactory.createURI(root + identifier + ".nt");
             }
 
             // add hypermedia controls to all non-leaf nodes
@@ -146,8 +146,8 @@ public class HypermediaControls {
                     if (this.counts.containsKey(nextHash)) {
                         queue.add(next);
                         int count = this.counts.get(nextHash);
-
-                        Node nextNode = NodeFactory.createURI(root + String.join("+", next));
+                        
+                        Node nextNode = NodeFactory.createURI(root + String.join("+", next) + ".nt");
                         Node remainingNode = NodeFactory.createLiteralByValue(count, TypeMapper.getInstance().getTypeByValue(count));
 
                         Node relationNode = NodeFactory.createBlankNode(String.join("+", next));
