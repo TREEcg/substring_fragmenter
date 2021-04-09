@@ -1,6 +1,7 @@
 package main.java;
 
 import org.apache.jena.atlas.lib.CharSpace;
+import org.apache.jena.base.Sys;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.impl.LiteralLabel;
@@ -9,6 +10,7 @@ import org.apache.jena.riot.out.NodeFormatterNT;
 import org.apache.jena.riot.system.StreamRDF;
 import org.apache.jena.riot.system.StreamRDFLib;
 import org.apache.jena.sparql.core.Quad;
+import org.apache.jena.util.PrintUtil;
 
 import javax.annotation.Nullable;
 import java.io.FileWriter;
@@ -70,26 +72,57 @@ class FragmentSink implements StreamRDF {
             for ( Node p : properties ) {
                 for ( Triple triple : this.buffer.getTriples()) {
                     if (triple.getPredicate().getURI().equals(p.getURI())) {
-                        values.add(triple.getObject().getLiteralLexicalForm());
+                        String language = triple.getObject().getLiteralLanguage();
+                        if (!(
+                                language.equals("ja")
+                                        || language.equals("zh")
+                                        || language.equals("ko")
+                                        || language.equals("zh-cn")
+                                        || language.equals("got")
+                                        || language.equals("yue")
+                        )) {
+                            values.add(triple.getObject().getLiteralLexicalForm());
+                        }
                     }
                 }
                 for ( Quad quad : this.buffer.getQuads()) {
                     if (quad.getPredicate().getURI().equals(p.getURI()) && quad.getObject().isLiteral()) {
                         String language = quad.getObject().getLiteralLanguage();
-                        if (!language.equals("ja") && !language.equals("zh") && !language.equals("ko") && !language.equals("zh-cn")) {
+                        if (!(
+                            language.equals("ja")
+                            || language.equals("zh")
+                            || language.equals("ko")
+                            || language.equals("zh-cn")
+                            || language.equals("got")
+                            || language.equals("yue")
+                        )) {
                             values.add(quad.getObject().getLiteralLexicalForm());
                         }
                     }
                 }
             }
 
-            for (StreamRDF out : this.getOutStreams(values)) {
-                for ( Triple triple : buffer.getTriples()) {
-                    out.triple(triple);
+            try {
+                Iterable<StreamRDF> streams = this.getOutStreams(values);
+                for (StreamRDF out : streams) {
+                    for ( Triple triple : buffer.getTriples()) {
+                        out.triple(triple);
+                    }
+                    for ( Quad quad : buffer.getQuads()) {
+                        out.quad(quad);
+                    }
                 }
-                for ( Quad quad : buffer.getQuads()) {
-                    out.quad(quad);
+            } catch (IOException ex) {
+                System.out.println("Error occurred while handling these statements:");
+                for ( Triple triple : this.buffer.getTriples() ) {
+                    PrintUtil.print(triple);
                 }
+                for ( Quad quad : this.buffer.getQuads() ) {
+                    PrintUtil.print(quad);
+                }
+                System.out.println("The error:");
+                ex.printStackTrace(System.out);
+                exit(1);
             }
         }
     }
@@ -208,7 +241,7 @@ class FragmentSink implements StreamRDF {
         return substringSet;
     }
 
-    private Iterable<StreamRDF> getOutStreams(Iterable<String> values)  {
+    private Iterable<StreamRDF> getOutStreams(Iterable<String> values) throws IOException {
         Set<List<String>> substringSet = new HashSet<>();
 
         // remove diacritics
@@ -238,18 +271,14 @@ class FragmentSink implements StreamRDF {
         }
     }
 
-    private StreamRDF getOutStream(List<String> tokens, Long hash)  {
+    private StreamRDF getOutStream(List<String> tokens, Long hash) throws IOException {
         if (!this.outStreams.containsKey(hash)) {
             java.util.Collections.sort(tokens);
+
             Path filePath = this.outDirPath.resolve(String.join("+", tokens) + this.extension);
-            try {
-                OutputStreamWriter fileWriter = new FileWriter(String.valueOf(filePath), true);
-                StreamRDF rdfWriter = StreamRDFLib.writer(fileWriter);
-                this.outStreams.put(hash, rdfWriter);
-            } catch (IOException e) {
-                e.printStackTrace(System.out);
-                exit(1);
-            }
+            OutputStreamWriter fileWriter = new FileWriter(String.valueOf(filePath), true);
+            StreamRDF rdfWriter = StreamRDFLib.writer(fileWriter);
+            this.outStreams.put(hash, rdfWriter);
         }
 
         return this.outStreams.get(hash);
