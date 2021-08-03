@@ -160,7 +160,7 @@ public class HypermediaControls {
                             out.triple(Triple.create(relationNode, valuePredicate, tokenValue));
                         }
                         out.triple(Triple.create(relationNode, treePathPredicate, pathNode));
-                        out.triple(Triple.create(nextNode, remainingPredicate, remainingNode));
+                        out.triple(Triple.create(relationNode, remainingPredicate, remainingNode));
                     }
                 }
 
