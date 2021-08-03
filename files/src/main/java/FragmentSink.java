@@ -204,7 +204,7 @@ class FragmentSink implements StreamRDF {
                 currentSubstring += newChar;
 
                 if (newChar != ' ') {
-                    List<String> tokens = Arrays.asList(currentSubstring.strip().split("\\s+"));
+                    List<String> tokens = Arrays.asList(currentSubstring.strip().split("[\\p{javaSpaceChar}\\p{Pd}]+"));
                     Long hash = this.hasher.hash(tokens);
                     if (!this.counts.containsKey(hash)) {
                         this.counts.put(hash, 0);
@@ -296,7 +296,7 @@ class FragmentSink implements StreamRDF {
         reduced = reduced.replaceAll("\\p{M}", "");
 
         // retain all letters/digits/whitespace
-        reduced = reduced.replaceAll("[^\\p{IsDigit}\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}]", "");
+        reduced = reduced.replaceAll("[^\\p{IsDigit}\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}\\p{Pd}]", "");
         return reduced;
     }
 
