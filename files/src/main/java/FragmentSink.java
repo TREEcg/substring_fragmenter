@@ -180,7 +180,7 @@ class FragmentSink implements StreamRDF {
         List<Integer> result = new ArrayList<>();
         for (int i = 0; i < value.length(); i++) {
             char c = value.charAt(i);
-            if (c == ' ') {
+            if (!Character.isLetter(c) && !Character.isDigit(c)) {
                 flagNext = true;
             } else {
                 if (flagNext) {
@@ -194,7 +194,7 @@ class FragmentSink implements StreamRDF {
 
     private Set<List<String>> selectSubstrings(String value) {
         Set<List<String>> substringSet = new HashSet<>();
-        String valueValue = value + value;
+        String valueValue = value + " " + value;
 
         outerLoop:
         for (Integer start : this.startingPositions(value)) {
@@ -204,7 +204,7 @@ class FragmentSink implements StreamRDF {
                 currentSubstring += newChar;
 
                 if (newChar != ' ') {
-                    List<String> tokens = Arrays.asList(currentSubstring.strip().split("[\\p{javaSpaceChar}\\p{Pd}]+"));
+                    List<String> tokens = Arrays.asList(currentSubstring.strip().split("[^\\p{IsDigit}\\p{IsLetter}]+"));
                     Long hash = this.hasher.hash(tokens);
                     if (!this.counts.containsKey(hash)) {
                         this.counts.put(hash, 0);
@@ -289,15 +289,7 @@ class FragmentSink implements StreamRDF {
 
         // normalize unicode string
         // see http://www.unicode.org/reports/tr15/#Normalization_Forms_Table
-        reduced = Normalizer.normalize(reduced, Normalizer.Form.NFKD);
-
-        // discard all Mark values
-        // see http://www.unicode.org/reports/tr44/#General_Category_Values
-        reduced = reduced.replaceAll("\\p{M}", "");
-
-        // retain all letters/digits/whitespace
-        reduced = reduced.replaceAll("[^\\p{IsDigit}\\p{IsLetter}\\p{IsIdeographic}\\p{javaSpaceChar}\\p{Pd}]", "");
-        return reduced;
+        return Normalizer.normalize(reduced, Normalizer.Form.NFKD);
     }
 
     public void base(String base) {

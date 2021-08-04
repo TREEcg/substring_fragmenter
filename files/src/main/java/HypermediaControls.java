@@ -73,6 +73,8 @@ public class HypermediaControls {
         Node shaclMinCountPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#minCount");
         Node alternatePathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
         Node relationObject = NodeFactory.createURI("https://w3id.org/tree#SubstringRelation");
+        Node shaclPatternPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#pattern");
+        Node shaclFlagsPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#flags");
         Node rootNode = NodeFactory.createURI(root);
 
         // memorizing all prefixes requires an impossible amount of memory
@@ -139,6 +141,9 @@ public class HypermediaControls {
                 Node tempNode = NodeFactory.createLiteralByValue(temp, TypeMapper.getInstance().getTypeByValue(temp));
                 out.triple(Triple.create(propertyNode, shaclMinCountPredicate, tempNode));
 
+                Node patternNode = NodeFactory.createLiteral("[\\p{L}\\p{N}]+", "");
+                Node flagsNode = NodeFactory.createLiteral("i");
+
                 // add links to the following data pages
                 // by just iterating over all known possible prefix extensions
                 for( List<String> next : this.expandTokens(current) ) {
@@ -160,6 +165,8 @@ public class HypermediaControls {
                             out.triple(Triple.create(relationNode, valuePredicate, tokenValue));
                         }
                         out.triple(Triple.create(relationNode, treePathPredicate, pathNode));
+                        out.triple(Triple.create(relationNode, shaclPatternPredicate, patternNode));
+                        out.triple(Triple.create(relationNode, shaclFlagsPredicate, flagsNode));
                         out.triple(Triple.create(relationNode, remainingPredicate, remainingNode));
                     }
                 }
