@@ -4,11 +4,13 @@ import org.apache.jena.datatypes.TypeMapper;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.graph.Triple;
+import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.system.StreamRDF;
-import org.apache.jena.riot.system.StreamRDFLib;
+import org.apache.jena.riot.system.StreamRDFWriter;
 
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.*;
 
@@ -68,7 +70,7 @@ public class HypermediaControls {
         Node remainingPredicate = NodeFactory.createURI("https://w3id.org/tree#remainingItems");
         Node treePathPredicate = NodeFactory.createURI("https://w3id.org/tree#path");
         Node treeShapePredicate = NodeFactory.createURI("https://w3id.org/tree#shape");
-        Node shaclPropertyPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#alternativePath");
+        Node shaclPropertyPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#property");
         Node shaclPathPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#path");
         Node shaclMinCountPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#minCount");
         Node alternatePathPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#alternativePath");
@@ -114,7 +116,13 @@ public class HypermediaControls {
             }
 
             if (current.size() == 0 || this.counts.get(currentHash) > 100) {
-                StreamRDF out = StreamRDFLib.writer(new FileWriter(String.valueOf(filePath), true));
+                OutputStream fileWriter = new FileOutputStream(String.valueOf(filePath), true);
+                StreamRDF out;
+                if (this.extension == ".trig") {
+                    out = StreamRDFWriter.getWriterStream(fileWriter, Lang.TRIG);
+                } else {
+                    out = StreamRDFWriter.getWriterStream(fileWriter, Lang.TURTLE);
+                }
 
                 // define this page as a subset of the collection as a whole
                 out.triple(Triple.create(rootNode, subsetPredicate, thisNode));
@@ -123,9 +131,8 @@ public class HypermediaControls {
                 Node pathNode;
                 if (this.properties.size() > 1) {
                     pathNode = NodeFactory.createBlankNode("path_node");
-                    for (Node propertyNode : this.properties) {
-                        out.triple(Triple.create(pathNode, alternatePathPredicate, propertyNode));
-                    }
+                    Node listNode = this.writeList(this.properties, out,"propertylist");
+                    out.triple(Triple.create(pathNode, alternatePathPredicate, listNode));
                 } else {
                     pathNode = this.properties.get(0);
                 }
@@ -176,5 +183,25 @@ public class HypermediaControls {
         }
 
         System.out.println("Fullest page: " + mostWrittenPrefix + " @ " + mostWrittenCount);
+    }
+
+    protected Node writeList(List<Node> nodes, StreamRDF out, String prefix) {
+        Node firstPredicate = NodeFactory.createURI("http://www.w3.org/1999/02/22-rdf-syntax-ns#first");
+        Node restPredicate = NodeFactory.createURI("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest");
+        Node nil = NodeFactory.createURI("http://www.w3.org/1999/02/22-rdf-syntax-ns#nil");
+
+        Node result = NodeFactory.createBlankNode("prefix" + 0);
+        out.triple(Triple.create(result, firstPredicate, nodes.get(0)));
+
+        Node lastNode = result;
+        for (int i = 1; i < nodes.size(); i++) {
+            Node newNode = NodeFactory.createBlankNode(prefix + i);
+            out.triple(Triple.create(lastNode, restPredicate, newNode));
+            out.triple(Triple.create(newNode, firstPredicate, nodes.get(i)));
+            lastNode = newNode;
+        }
+
+        out.triple(Triple.create(lastNode, restPredicate, nil));
+        return result;
     }
 }

@@ -1,21 +1,18 @@
 package main.java;
 
 import org.apache.jena.atlas.lib.CharSpace;
-import org.apache.jena.base.Sys;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
-import org.apache.jena.graph.impl.LiteralLabel;
+import org.apache.jena.riot.Lang;
 import org.apache.jena.riot.out.NodeFormatter;
 import org.apache.jena.riot.out.NodeFormatterNT;
 import org.apache.jena.riot.system.StreamRDF;
-import org.apache.jena.riot.system.StreamRDFLib;
+import org.apache.jena.riot.system.StreamRDFWriter;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.util.PrintUtil;
 
 import javax.annotation.Nullable;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
+import java.io.*;
 import java.nio.file.Path;
 import java.text.Normalizer;
 import java.util.*;
@@ -276,8 +273,13 @@ class FragmentSink implements StreamRDF {
             java.util.Collections.sort(tokens);
 
             Path filePath = this.outDirPath.resolve(String.join("+", tokens) + this.extension);
-            OutputStreamWriter fileWriter = new FileWriter(String.valueOf(filePath), true);
-            StreamRDF rdfWriter = StreamRDFLib.writer(fileWriter);
+            OutputStream fileWriter = new FileOutputStream(String.valueOf(filePath), true);
+            StreamRDF rdfWriter;
+            if (this.extension == ".trig") {
+                rdfWriter = StreamRDFWriter.getWriterStream(fileWriter, Lang.TRIG);
+            } else {
+                rdfWriter = StreamRDFWriter.getWriterStream(fileWriter, Lang.TURTLE);
+            }
             this.outStreams.put(hash, rdfWriter);
         }
 

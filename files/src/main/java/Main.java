@@ -84,7 +84,7 @@ public class Main {
             for (ConfigTask task : config.tasks) {
                 // process each file, one by one
                 // this could be parallelized, but we'd just run into IO limitations
-                String extension = task.extension == null ? ".nt" : task.extension;
+                String extension = task.extension == null ? ".ttl" : task.extension;
                 handleTask(URI.create(config.domain), config.outDir, task, config.maxFileHandles, extension);
             }
         } catch (IOException e) {
