@@ -68,13 +68,13 @@ public class HypermediaControls {
         Node remainingPredicate = NodeFactory.createURI("https://w3id.org/tree#remainingItems");
         Node treePathPredicate = NodeFactory.createURI("https://w3id.org/tree#path");
         Node treeShapePredicate = NodeFactory.createURI("https://w3id.org/tree#shape");
-        Node shaclPropertyPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
-        Node shaclPathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#path");
-        Node shaclMinCountPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#minCount");
-        Node alternatePathPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#alternativePath");
+        Node shaclPropertyPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#alternativePath");
+        Node shaclPathPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#path");
+        Node shaclMinCountPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#minCount");
+        Node alternatePathPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#alternativePath");
         Node relationObject = NodeFactory.createURI("https://w3id.org/tree#SubstringRelation");
-        Node shaclPatternPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#pattern");
-        Node shaclFlagsPredicate = NodeFactory.createURI("https://www.w3.org/ns/shacl#flags");
+        Node shaclPatternPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#pattern");
+        Node shaclFlagsPredicate = NodeFactory.createURI("http://www.w3.org/ns/shacl#flags");
         Node rootNode = NodeFactory.createURI(root);
 
         // memorizing all prefixes requires an impossible amount of memory
